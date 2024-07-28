@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CronoLogistc</title>
+    <title>Mapa 2D con rutas OSM, semáforos y auto animado que respeta semáforos</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.css" />
     <style>
@@ -75,19 +75,51 @@
         .legend {
             line-height: 1.5;
         }
+        #vehicleType{
+            font-size: 16px;
+        }
+        #environment{
+            font-size: 16px;
+        }
     </style>
 </head>
 <body>
     <div id="sidebar">
-        <h2>Calculador de tiempo</h2>
+        <h2>Control de Mapa</h2>
         <div id="loadingIndicator" class="info-panel">Cargando...</div>
-<!--        <div id="carStatus" class="info-panel"></div>
-        <div id="travelTime" class="info-panel"></div>-->
+<!--         <div id="carStatus" class="info-panel"></div>
+        <div id="travelTime" class="info-panel"></div> -->
+        <div class="info-panel">
+            <h3>Tipo de vehículo</h3>
+            <select id="vehicleType">
+                <option value="bicycle">Bicicleta</option>
+                <option value="car">Automóvil</option>
+                <option value="carket">Camioneta</option>
+                <option value="truck1">Camión</option>
+                <option value="truck2">Camión c/Acoplado</option>
+                <option value="bus">Autobús</option>
+                <option value="motorcycle">Motocicleta</option>
+
+            </select>
+        </div>
+        
+        <div class="info-panel">
+            <h3>Entorno</h3>
+            <select id="environment">
+                <option value="sunny">Soleado</option>
+                <option value="drizzle1">Llovizna 1</option>
+                <option value="drizzle2">Llovizna 2</option>
+                <option value="snow1">Nieve 1</option>
+                <option value="snow2">Nieve 2</option>
+            </select>
+        </div>
+
+
         <div id="configPanel" class="info-panel">
             <h3>Configuración</h3>
             <label>
                 Velocidad máxima (km/h):
-                <input type="number" id="maxSpeed" value="50" min="1" max="200">
+                <input type="number" id="maxSpeed" value="50" min="1" max="500">
             </label>
             <label>
                 Tiempo en semáforos (s):
@@ -95,7 +127,7 @@
             </label>
             <label>
                 Tiempo de espera en esquinas (s):
-                <input type="number" id="cornerWaitTime" value="10" min="1" max="60">
+                <input type="number" id="cornerWaitTime" value="10" min="1" max="120">
             </label>
         </div>
         
@@ -148,7 +180,6 @@ var totalDistance = 0;
 var totalTravelTime = 0;
 
 
-
         // Deshabilitar Ctrl+U, Ctrl+Shift+I y Ctrl+Shift+J
         document.addEventListener('keydown', function(event) {
             if ((event.ctrlKey && event.shiftKey && event.key === 'I') ||
@@ -175,9 +206,7 @@ var totalTravelTime = 0;
         });
 
 
-        
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors'
 }).addTo(map);
 
@@ -341,12 +370,32 @@ function isNearTrafficLight(position) {
     );
 }
 
+function getAdjustedSpeed(baseSpeed, environment) {
+    switch(environment) {
+        case 'sunny':
+            return baseSpeed;
+        case 'drizzle1':
+            return baseSpeed * 0.75; // 25% de reducción
+        case 'drizzle2':
+            return baseSpeed * 0.70; // 30% de reducción
+        case 'snow1':
+            return baseSpeed * 0.60; // 40% de reducción
+        case 'snow2':
+            return baseSpeed * 0.50; // 50% de reducción
+        default:
+            return baseSpeed;
+    }
+}
+
 function calculateAdvancedTravelTime() {
-    var maxSpeed = parseFloat(document.getElementById('maxSpeed').value);
+    var baseMaxSpeed = Math.min(parseFloat(document.getElementById('maxSpeed').value), 60);
+    document.getElementById('maxSpeed').value = baseMaxSpeed; // Actualizar el valor en el input
+    var environment = document.getElementById('environment').value;
+    var adjustedMaxSpeed = getAdjustedSpeed(baseMaxSpeed, environment);
     var trafficLightWait = parseFloat(document.getElementById('trafficLightWait').value);
     var cornerWaitTime = parseFloat(document.getElementById('cornerWaitTime').value);
     
-    var travelTimeInHours = totalDistance / 1000 / maxSpeed;
+    var travelTimeInHours = totalDistance / 1000 / adjustedMaxSpeed;
     var baseTimeInSeconds = travelTimeInHours * 3600;
     
     var trafficLightCount = trafficLightPositions.length;
@@ -419,48 +468,26 @@ function updateRouteInfo() {
     document.getElementById('turn90Count').textContent = turn90Count;
 }
 
-document.getElementById('startAnimation').addEventListener('click', function() {
-    if (routeCoordinates.length > 0 && !isAnimating) {
-        if (carMarker) {
-            map.removeLayer(carMarker);
-        }
-        createCarMarker();
-        isAnimating = true;
-        calculateAdvancedTravelTime();
-        animateCar();
-    } else if (isAnimating) {
-        alert('La animación ya está en curso');
-    } else {
-        alert('Por favor, espera a que se calcule la ruta');
+document.getElementById('maxSpeed').addEventListener('input', function() {
+    var maxSpeedInput = document.getElementById('maxSpeed');
+    if (parseFloat(maxSpeedInput.value) > 60) {
+        maxSpeedInput.value = 60;
     }
+    calculateAdvancedTravelTime();
 });
 
-document.getElementById('stopAnimation').addEventListener('click', function() {
-    if (isAnimating) {
-        isAnimating = false;
-        cancelAnimationFrame(animationId);
-        carStatus.textContent = "Animación detenida";
-    } else {
-        alert('La animación no está en curso');
-    }
-});
-
-document.getElementById('resumeAnimation').addEventListener('click', function() {
-    if (!isAnimating && carMarker) {
-        isAnimating = true;
-        animateCar();
-    } else if (isAnimating) {
-        alert('La animación ya está en curso');
-    } else {
-        alert('No hay una animación pausada para reanudar');
-    }
-});
-
-document.getElementById('maxSpeed').addEventListener('change', calculateAdvancedTravelTime);
 document.getElementById('trafficLightWait').addEventListener('change', calculateAdvancedTravelTime);
 document.getElementById('cornerWaitTime').addEventListener('change', calculateAdvancedTravelTime);
+document.getElementById('environment').addEventListener('change', calculateAdvancedTravelTime);
+document.getElementById('vehicleType').addEventListener('change', calculateAdvancedTravelTime);
+
+// Inicialización
+fetchAndShowTrafficLights();
+
+
+
+
     </script>
 
 </body>
 </html>
-
