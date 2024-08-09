@@ -331,7 +331,7 @@ function calculateDistance(point1, point2) {
     const φ1 = point1.lat * Math.PI / 180;
     const φ2 = point2.lat * Math.PI / 180;
     const Δφ = (point2.lat - point1.lat) * Math.PI / 180;
-    const Δλ = (point2.lon - point1.lon) * Math.PI / 180;
+    const Δλ = (point2.lng - point1.lng) * Math.PI / 180;
 
     const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
               Math.cos(φ1) * Math.cos(φ2) *
@@ -418,23 +418,48 @@ function calculateAdvancedTravelTime() {
 function contarGiros(coordinates) {
     let giros90 = 0;
     let girosNoRectos = 0;
+    let umbralGiro = 30; // Aumentamos el umbral para considerar un giro
+    let umbralGiro90 = 15; // Margen de error para giros de 90 grados
+    let distanciaMinima = 20; // Distancia mínima entre giros en metros
+
+    let ultimoGiro = null;
+
     for (let i = 1; i < coordinates.length - 1; i++) {
-        let angle = calculateAngle(coordinates[i-1], coordinates[i], coordinates[i+1]);
-        if (Math.abs(angle) >= 80 && Math.abs(angle) <= 100) {
-            giros90++;
-        } else if (Math.abs(angle) > 10) { // Consideramos un giro si el ángulo es mayor a 10 grados
-            girosNoRectos++;
+        let angle = Math.abs(calculateAngle(coordinates[i-1], coordinates[i], coordinates[i+1]));
+        
+        // Verificamos si estamos lo suficientemente lejos del último giro
+        if (ultimoGiro && calculateDistance(coordinates[i], ultimoGiro) < distanciaMinima) {
+            continue;
+        }
+
+        if (angle > umbralGiro) {
+            if (Math.abs(angle - 90) <= umbralGiro90) {
+                giros90++;
+            } else {
+                girosNoRectos++;
+            }
+            ultimoGiro = coordinates[i];
         }
     }
     return { giros90, girosNoRectos };
 }
-//cambios
 
 function calculateAngle(point1, point2, point3) {
-    let angle1 = Math.atan2(point1.lat - point2.lat, point1.lng - point2.lng);
-    let angle2 = Math.atan2(point3.lat - point2.lat, point3.lng - point2.lng);
-    let angle = (angle2 - angle1) * 180 / Math.PI;
-    return angle < -180 ? angle + 360 : angle > 180 ? angle - 360 : angle;
+    let vector1 = {
+        x: point1.lng - point2.lng,
+        y: point1.lat - point2.lat
+    };
+    let vector2 = {
+        x: point3.lng - point2.lng,
+        y: point3.lat - point2.lat
+    };
+
+    let dotProduct = vector1.x * vector2.x + vector1.y * vector2.y;
+    let magnitude1 = Math.sqrt(vector1.x * vector1.x + vector1.y * vector1.y);
+    let magnitude2 = Math.sqrt(vector2.x * vector2.x + vector2.y * vector2.y);
+
+    let angle = Math.acos(dotProduct / (magnitude1 * magnitude2));
+    return angle * (180 / Math.PI);
 }
 
 function animateCar() {
@@ -489,9 +514,6 @@ document.getElementById('vehicleType').addEventListener('change', calculateAdvan
 
 // Inicialización
 fetchAndShowTrafficLights();
-
-
-
 
     </script>
 
