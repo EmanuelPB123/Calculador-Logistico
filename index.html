@@ -402,8 +402,8 @@ function calculateAdvancedTravelTime() {
     var trafficLightCount = trafficLightPositions.length;
     var trafficLightTime = trafficLightCount * trafficLightWait;
     
-    var turn90Count = contarGiros90Grados(routeCoordinates);
-    var cornerTime = turn90Count * cornerWaitTime;
+    var { giros90, girosNoRectos } = contarGiros(routeCoordinates);
+    var cornerTime = (giros90 + girosNoRectos) * cornerWaitTime;//cambios
     
     var totalTravelTime = baseTimeInSeconds + trafficLightTime + cornerTime;
     
@@ -415,16 +415,20 @@ function calculateAdvancedTravelTime() {
     return totalTravelTime;
 }
 
-function contarGiros90Grados(coordinates) {
-    let count = 0;
+function contarGiros(coordinates) {
+    let giros90 = 0;
+    let girosNoRectos = 0;
     for (let i = 1; i < coordinates.length - 1; i++) {
         let angle = calculateAngle(coordinates[i-1], coordinates[i], coordinates[i+1]);
-        if (Math.abs(angle) > 80 && Math.abs(angle) < 100) {
-            count++;
+        if (Math.abs(angle) >= 80 && Math.abs(angle) <= 100) {
+            giros90++;
+        } else if (Math.abs(angle) > 10) { // Consideramos un giro si el ángulo es mayor a 10 grados
+            girosNoRectos++;
         }
     }
-    return count;
+    return { giros90, girosNoRectos };
 }
+//cambios
 
 function calculateAngle(point1, point2, point3) {
     let angle1 = Math.atan2(point1.lat - point2.lat, point1.lng - point2.lng);
@@ -463,10 +467,11 @@ function animateCar() {
 
 function updateRouteInfo() {
     var trafficLightCount = trafficLightPositions.length;
-    var turn90Count = contarGiros90Grados(routeCoordinates);
+    var { giros90, girosNoRectos } = contarGiros(routeCoordinates);
     
     document.getElementById('trafficLightCount').textContent = trafficLightCount;
-    document.getElementById('turn90Count').textContent = turn90Count;
+    document.getElementById('turn90Count').textContent = giros90;
+    document.getElementById('turnNon90Count').textContent = girosNoRectos; // Nuevo elemento
 }
 
 document.getElementById('maxSpeed').addEventListener('input', function() {
