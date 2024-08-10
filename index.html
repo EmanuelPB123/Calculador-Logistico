@@ -86,7 +86,7 @@
 <body>
     <div id="sidebar">
         <h2>Control de Mapa</h2>
-        <div id="loadingIndicator" class="info-panel">Cargando...</div>
+        <div id="loadingIndicator" class="info-panel"></div>
 <!--         <div id="carStatus" class="info-panel"></div>
         <div id="travelTime" class="info-panel"></div> -->
         <div class="info-panel">
@@ -135,7 +135,6 @@
             <h3>Información de la Ruta</h3>
             <p>Número de semáforos: <span id="trafficLightCount">0</span></p>
             <p>Giros de 90 grados: <span id="turn90Count">0</span></p>
-            <p>Giros no rectos: <span id="turnNon90Count">0</span></p>
         </div>
         
         <div id="travelTimeInfo" class="info-panel">
@@ -182,29 +181,29 @@ var totalTravelTime = 0;
 
 
         // Deshabilitar Ctrl+U, Ctrl+Shift+I y Ctrl+Shift+J
-        document.addEventListener('keydown', function(event) {
+         document.addEventListener('keydown', function(event) {
             if ((event.ctrlKey && event.shiftKey && event.key === 'I') ||
                 (event.ctrlKey && event.shiftKey && event.key === 'J') ||
                 (event.ctrlKey && event.key === 'U')) {
                 event.preventDefault();
 
             }
-        });
+        }); 
                 // Deshabilitar Ctrl+U, Ctrl+Shift+I y Ctrl+Shift+J
-                document.addEventListener('keydown', function(event) {
+                 document.addEventListener('keydown', function(event) {
             if ((event.ctrlKey && event.shiftKey && event.key === 'i') ||
                 (event.ctrlKey && event.shiftKey && event.key === 'j') ||
                 (event.ctrlKey && event.key === 'u')) {
                 event.preventDefault();
 
             }
-        });
+        }); 
 
         // Deshabilitar botón derecho del ratón
-        document.addEventListener('contextmenu', function(event) {
+         document.addEventListener('contextmenu', function(event) {
             event.preventDefault();
 
-        });
+        }); 
 
 
      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -331,7 +330,7 @@ function calculateDistance(point1, point2) {
     const φ1 = point1.lat * Math.PI / 180;
     const φ2 = point2.lat * Math.PI / 180;
     const Δφ = (point2.lat - point1.lat) * Math.PI / 180;
-    const Δλ = (point2.lng - point1.lng) * Math.PI / 180;
+    const Δλ = (point2.lon - point1.lon) * Math.PI / 180;
 
     const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
               Math.cos(φ1) * Math.cos(φ2) *
@@ -402,8 +401,8 @@ function calculateAdvancedTravelTime() {
     var trafficLightCount = trafficLightPositions.length;
     var trafficLightTime = trafficLightCount * trafficLightWait;
     
-    var { giros90, girosNoRectos } = contarGiros(routeCoordinates);
-    var cornerTime = (giros90 + girosNoRectos) * cornerWaitTime;//cambios
+    var turn90Count = contarGiros90Grados(routeCoordinates);
+    var cornerTime = turn90Count * cornerWaitTime;
     
     var totalTravelTime = baseTimeInSeconds + trafficLightTime + cornerTime;
     
@@ -415,51 +414,22 @@ function calculateAdvancedTravelTime() {
     return totalTravelTime;
 }
 
-function contarGiros(coordinates) {
-    let giros90 = 0;
-    let girosNoRectos = 0;
-    let umbralGiro = 30; // Aumentamos el umbral para considerar un giro
-    let umbralGiro90 = 15; // Margen de error para giros de 90 grados
-    let distanciaMinima = 20; // Distancia mínima entre giros en metros
-
-    let ultimoGiro = null;
-
+function contarGiros90Grados(coordinates) {
+    let count = 0;
     for (let i = 1; i < coordinates.length - 1; i++) {
-        let angle = Math.abs(calculateAngle(coordinates[i-1], coordinates[i], coordinates[i+1]));
-        
-        // Verificamos si estamos lo suficientemente lejos del último giro
-        if (ultimoGiro && calculateDistance(coordinates[i], ultimoGiro) < distanciaMinima) {
-            continue;
-        }
-
-        if (angle > umbralGiro) {
-            if (Math.abs(angle - 90) <= umbralGiro90) {
-                giros90++;
-            } else {
-                girosNoRectos++;
-            }
-            ultimoGiro = coordinates[i];
+        let angle = calculateAngle(coordinates[i-1], coordinates[i], coordinates[i+1]);
+        if (Math.abs(angle) > 80 && Math.abs(angle) < 100) {
+            count++;
         }
     }
-    return { giros90, girosNoRectos };
+    return count;
 }
 
 function calculateAngle(point1, point2, point3) {
-    let vector1 = {
-        x: point1.lng - point2.lng,
-        y: point1.lat - point2.lat
-    };
-    let vector2 = {
-        x: point3.lng - point2.lng,
-        y: point3.lat - point2.lat
-    };
-
-    let dotProduct = vector1.x * vector2.x + vector1.y * vector2.y;
-    let magnitude1 = Math.sqrt(vector1.x * vector1.x + vector1.y * vector1.y);
-    let magnitude2 = Math.sqrt(vector2.x * vector2.x + vector2.y * vector2.y);
-
-    let angle = Math.acos(dotProduct / (magnitude1 * magnitude2));
-    return angle * (180 / Math.PI);
+    let angle1 = Math.atan2(point1.lat - point2.lat, point1.lng - point2.lng);
+    let angle2 = Math.atan2(point3.lat - point2.lat, point3.lng - point2.lng);
+    let angle = (angle2 - angle1) * 180 / Math.PI;
+    return angle < -180 ? angle + 360 : angle > 180 ? angle - 360 : angle;
 }
 
 function animateCar() {
@@ -492,11 +462,10 @@ function animateCar() {
 
 function updateRouteInfo() {
     var trafficLightCount = trafficLightPositions.length;
-    var { giros90, girosNoRectos } = contarGiros(routeCoordinates);
+    var turn90Count = contarGiros90Grados(routeCoordinates);
     
     document.getElementById('trafficLightCount').textContent = trafficLightCount;
-    document.getElementById('turn90Count').textContent = giros90;
-    document.getElementById('turnNon90Count').textContent = girosNoRectos; // Nuevo elemento
+    document.getElementById('turn90Count').textContent = turn90Count;
 }
 
 document.getElementById('maxSpeed').addEventListener('input', function() {
@@ -514,6 +483,9 @@ document.getElementById('vehicleType').addEventListener('change', calculateAdvan
 
 // Inicialización
 fetchAndShowTrafficLights();
+
+
+
 
     </script>
 
