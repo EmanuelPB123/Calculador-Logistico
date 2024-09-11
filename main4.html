@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<!-- aaa -->
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa 2D con rutas OSM, semáforos y auto animado que respeta semáforos</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.css" />
+    <style>
+        html, body { 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            font-family: Arial, sans-serif;
+        }
+        #map { 
+            height: 100%; 
+            width: calc(100% - 25%);
+            float: right;
+        }
+        #sidebar {
+            color: #e2e2e2;
+            width: 25%;
+            height: 100%;
+            float: left;
+            background: rgb(0, 0, 0);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0);
+            overflow-y: auto;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .info-panel {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #00000000;
+            border-radius: 0px;
+        }
+        .control-button {
+            display: block;
+            width: 100%;
+            padding: 10px 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 0px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-bottom: 10px;
+        }
+        #startAnimation { 
+            background-color: #4CAF50;
+            color: white;
+        }
+        #stopAnimation { 
+            background-color: #f44336;
+            color: white;
+        }
+        #resumeAnimation { 
+            background-color: #008CBA;
+            color: white;
+        }
+        .control-button:hover {
+            opacity: 0.8;
+        }
+        #configPanel input {
+            width: 60px;
+            margin-right: 5px;
+            padding: 5px;
+            border: 1px solid #ff0000;
+            border-radius: 0px;
+        }
+        #configPanel label {
+            display: block;
+            margin-bottom: 10px;
+        }
+        .legend {
+            line-height: 1.5;
+        }
+        #vehicleType{
+            font-size: 16px;
+        }
+        #environment{
+            font-size: 16px;
+        }
+        
+        #waypoints-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        
+        #waypoints-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        
+        #waypoints-list li {
+            margin-bottom: 5px;
+        }
+        
+        #add-waypoint {
+            margin-top: 10px;
+        }
+        #segments-list li {
+            cursor: help;
+            margin-bottom: 5px;
+        }
+        #segments-list li:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>Control de Mapa</h2>
+        <div id="loadingIndicator" class="info-panel"></div>
+<!--         <div id="carStatus" class="info-panel"></div>
+        <div id="travelTime" class="info-panel"></div> -->
+        <div class="info-panel">
+            <h3>Tipo de vehículo</h3>
+            <select id="vehicleType">
+                <option value="bicycle">Bicicleta</option>
+                <option value="car">Automóvil</option>
+                <option value="carket">Camioneta</option>
+                <option value="truck1">Camión</option>
+                <option value="truck2">Camión c/Acoplado</option>
+                <option value="bus">Autobús</option>
+                <option value="motorcycle">Motocicleta</option>
+
+            </select>
+        </div>
+        
+        <div class="info-panel">
+            <h3>Entorno</h3>
+            <select id="environment">
+                <option value="sunny">Soleado</option>
+                <option value="drizzle1">Llovizna 1</option>
+                <option value="drizzle2">Llovizna 2</option>
+                <option value="snow1">Nieve 1</option>
+                <option value="snow2">Nieve 2</option>
+            </select>
+        </div>
+
+
+        <div id="configPanel" class="info-panel">
+            <h3>Configuración</h3>
+            <label>
+                Velocidad máxima (km/h):
+                <input type="number" id="maxSpeed" value="50" min="1" max="500">
+            </label>
+            <label>
+                Tiempo en semáforos (s):
+                <input type="number" id="trafficLightWait" value="30" min="1" max="120">
+            </label>
+            <label>
+                Tiempo de espera en esquinas (s):
+                <input type="number" id="cornerWaitTime" value="10" min="1" max="120">
+            </label>
+        </div>
+        
+        <div id="routeInfo" class="info-panel">
+            <h3>Información de la Ruta</h3>
+            <p>Número de semáforos: <span id="trafficLightCount">0</span></p>
+            <p>Giros de 90 grados: <span id="turn90Count">0</span></p>
+        </div>
+        
+        <div id="segmentInfo" class="info-panel">
+            <h3>Distancias entre tramos</h3>
+            <ul id="distances-list"></ul>
+        </div>
+        
+        <div id="travelTimeInfo" class="info-panel">
+            <h3>Tiempo Estimado de Viaje</h3>
+            <p>Tiempo base: <span id="baseTime">0</span> minutos</p>
+            <p>Tiempo en semáforos: <span id="trafficLightTime">0</span> minutos</p>
+            <p>Tiempo en esquinas: <span id="cornerTime">0</span> minutos</p>
+            <p><strong>Tiempo total: <span id="totalTravelTime">0</span> minutos</strong></p>
+        </div>
+        <!-- <button id="startAnimation" class="control-button">Iniciar animación</button>
+        <button id="stopAnimation" class="control-button">Detener animación</button>
+        <button id="resumeAnimation" class="control-button">Reanudar animación</button> -->
+        <div class="info-panel legend">
+            <h3>Instrucciones:</h3>
+            <ul>
+                <li>Arrastra los marcadores para editar la ruta</li>
+                <li>Usa la sección de Configuración para ajustar la velocidad y tiempo de espera</li>
+            </ul>
+            <h3>Cálculos de tiempo por tramo:</h3>
+            <ul id="segments-list"></ul>
+        </div>
+    </div>
+    <div id="waypoints-panel">
+        <h3>Puntos intermedios</h3>
+        <ul id="waypoints-list"></ul>
+        <button id="add-waypoint">Agregar punto intermedio</button>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.min.js"></script>
+    <script>
+var map = L.map('map').setView([-45.85975118874194, -67.48692226889825], 10);
+var trafficLights = L.layerGroup().addTo(map);
+var loadingIndicator = document.getElementById('loadingIndicator');
+var carStatus = document.getElementById('carStatus');
+var travelTimeDiv = document.getElementById('travelTime');
+var debounceTimer;
+var fetchingData = false;
+var carMarker;
+var routeCoordinates = [];
+var trafficLightPositions = [];
+var visibleTrafficLights = []; // Nueva variable global para almacenar los semáforos visibles
+var proximityThreshold = 50;  // Distancia en metros
+var animationId;
+var isAnimating = false;
+var totalDistance = 0;
+var totalTravelTime = 0;
+var waypointsList = [];
+
+
+        // Deshabilitar Ctrl+U, Ctrl+Shift+I y Ctrl+Shift+J
+         document.addEventListener('keydown', function(event) {
+            if ((event.ctrlKey && event.shiftKey && event.key === 'I') ||
+                (event.ctrlKey && event.shiftKey && event.key === 'J') ||
+                (event.ctrlKey && event.key === 'U')) {
+                event.preventDefault();
+
+            }
+        }); 
+                // Deshabilitar Ctrl+U, Ctrl+Shift+I y Ctrl+Shift+J
+                 document.addEventListener('keydown', function(event) {
+            if ((event.ctrlKey && event.shiftKey && event.key === 'i') ||
+                (event.ctrlKey && event.shiftKey && event.key === 'j') ||
+                (event.ctrlKey && event.key === 'u')) {
+                event.preventDefault();
+
+            }
+        }); 
+
+        // Deshabilitar botón derecho del ratón
+         document.addEventListener('contextmenu', function(event) {
+            event.preventDefault();
+
+        }); 
+
+
+     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+function addSemaforo(lat, lng) {
+    var semaforoIcon = L.divIcon({
+        html: '🚦',
+        iconSize: [20, 20],
+        className: 'semaforo-icon'
+    });
+    L.marker([lat, lng], {icon: semaforoIcon}).addTo(trafficLights);
+    visibleTrafficLights.push([lat, lng]); // Añadir a la lista de semáforos visibles
+}
+
+var control = L.Routing.control({
+    waypoints: [
+        L.latLng(-45.857862243775294, -67.49983531765913),
+        L.latLng(-45.87424465247679, -67.50862090791196)
+    ],
+    router: L.Routing.osrmv1({
+        serviceUrl: 'https://router.project-osrm.org/route/v1'
+    }),
+    routeWhileDragging: true,
+    addWaypoints: true,
+    draggableWaypoints: true,
+    createMarker: function(i, wp, nWps) {
+        return L.marker(wp.latLng, {
+            draggable: true,
+            icon: L.icon({
+                iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+                iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [2, 2]
+            })
+        });
+    }
+}).addTo(map);
+
+control.on('routesfound', function(e) {
+    routeCoordinates = e.routes[0].coordinates;
+    totalDistance = e.routes[0].summary.totalDistance;
+    fetchAndShowTrafficLights();
+    calculateAdvancedTravelTime();
+    updateRouteInfo();
+});
+
+function fetchAndShowTrafficLights() {
+    if (fetchingData) return;
+    fetchingData = true;
+    loadingIndicator.style.display = 'block';
+
+    var bounds = map.getBounds();
+    var query = `
+        [out:json];
+        (
+          node["highway"="traffic_signals"]
+            (${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()});
+        );
+        out body;
+    `;
+
+    fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        body: 'data=' + encodeURIComponent(query)
+    })
+    .then(response => response.json())
+    .then(data => {
+        trafficLights.clearLayers();
+        visibleTrafficLights = []; // Reiniciar la lista de semáforos visibles
+        var groupedLights = groupNearbyTrafficLights(data.elements);
+        groupedLights.forEach(light => {
+            var lightLatLng = L.latLng(light.lat, light.lon);
+            if (isNearRoute(lightLatLng, routeCoordinates, proximityThreshold)) {
+                addSemaforo(light.lat, light.lon);
+            }
+        });
+        fetchingData = false;
+        loadingIndicator.style.display = 'none';
+        calculateAdvancedTravelTime();
+        updateRouteInfo();
+        console.log('Semáforos visibles:', visibleTrafficLights.length);
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        fetchingData = false;
+        loadingIndicator.style.display = 'none';
+    });
+}
+
+function groupNearbyTrafficLights(lights) {
+    const groupDistance = 70; // metros
+    const groups = [];
+
+    lights.forEach(light => {
+        let addedToGroup = false;
+        for (let group of groups) {
+            if (calculateDistance(light, group[0]) <= groupDistance) {
+                group.push(light);
+                addedToGroup = true;
+                break;
+            }
+        }
+        if (!addedToGroup) {
+            groups.push([light]);
+        }
+    });
+
+    return groups.map(group => {
+        return group.reduce((acc, curr) => {
+            acc.lat = (acc.lat || 0) + curr.lat / group.length;
+            acc.lon = (acc.lon || 0) + curr.lon / group.length;
+            return acc;
+        }, {});
+    });
+}
+
+function calculateDistance(point1, point2) {
+    const R = 6371e3; // Radio de la Tierra en metros
+    const φ1 = point1.lat * Math.PI / 180;
+    const φ2 = point2.lat * Math.PI / 180;
+    const Δφ = (point2.lat - point1.lat) * Math.PI / 180;
+    const Δλ = (point2.lon - point1.lon) * Math.PI / 180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c;
+}
+
+function isNearRoute(lightLatLng, routeCoords, threshold) {
+    return routeCoords.some(coord => 
+        lightLatLng.distanceTo(L.latLng(coord.lat, coord.lng)) < threshold
+    );
+}
+
+function debouncedFetchAndShowTrafficLights() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(fetchAndShowTrafficLights, 500);
+}
+
+map.on('moveend', debouncedFetchAndShowTrafficLights);
+fetchAndShowTrafficLights();
+
+function createCarMarker() {
+    var carIcon = L.divIcon({
+        className: 'car-icon',
+        html: '<div style="width: 20px; height: 20px; background-color: blue; border-radius: 50%;"></div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10]
+    });
+    carMarker = L.marker(routeCoordinates[0], {icon: carIcon}).addTo(map);
+}
+
+function isNearTrafficLight(position) {
+    return trafficLightPositions.some(light => 
+        map.distance(position, light) < 20
+    );
+}
+
+function getAdjustedSpeed(baseSpeed, environment) {
+    switch(environment) {
+        case 'sunny':
+            return baseSpeed;
+        case 'drizzle1':
+            return baseSpeed * 0.75; // 25% de reducción
+        case 'drizzle2':
+            return baseSpeed * 0.70; // 30% de reducción
+        case 'snow1':
+            return baseSpeed * 0.60; // 40% de reducción
+        case 'snow2':
+            return baseSpeed * 0.50; // 50% de reducción
+        default:
+            return baseSpeed;
+    }
+}
+/* tiempo de acelera de 0 a 100km/h */
+var vehicleAccelerationTime = {
+    bicycle: 20,
+    car: 8.5,
+    carket: 10,
+    truck1: 15,
+    truck2: 20,
+    bus: 18,
+    motorcycle: 4
+};
+
+function getVehicleAcceleration(maxSpeed) {
+    var vehicleType = document.getElementById('vehicleType').value;
+    var time = vehicleAccelerationTime[vehicleType] || 10;
+    return (100 / 3.6) / time; // Ahora devuelve la aceleración en m/s^2
+}
+
+function calculateAccelerationDistance(acceleration, maxSpeed) {
+    var timeToMaxSpeed = maxSpeed / (3.6 * acceleration);
+    return 0.5 * acceleration * Math.pow(timeToMaxSpeed, 2);
+}
+
+function calculateAdvancedTravelTime() {
+    var maxSpeed = parseFloat(document.getElementById('maxSpeed').value);
+    var environment = document.getElementById('environment').value;
+    var adjustedMaxSpeed = getAdjustedSpeed(maxSpeed, environment);
+    var trafficLightWait = parseFloat(document.getElementById('trafficLightWait').value);
+    var cornerWaitTime = parseFloat(document.getElementById('cornerWaitTime').value);
+    
+    var vehicleType = document.getElementById('vehicleType').value;
+    var accelerationTime = vehicleAccelerationTime[vehicleType] || 10;
+    var acceleration = (100 / 3.6) / accelerationTime; // m/s^2
+    
+    var accelerationDistance = 0.5 * acceleration * Math.pow(adjustedMaxSpeed / 3.6, 2) / acceleration;
+    
+    var segments = calculateSegmentDistances();
+    var totalTime = 0;
+    
+    segments.forEach(segment => {
+        if (segment.distance <= accelerationDistance) {
+            // El vehículo no alcanza la velocidad máxima en este segmento
+            var timeInSegment = Math.sqrt((2 * segment.distance) / acceleration);
+            totalTime += timeInSegment;
+        } else {
+            // El vehículo alcanza la velocidad máxima y mantiene velocidad constante
+            var timeToMaxSpeed = adjustedMaxSpeed / (3.6 * acceleration);
+            var distanceAtConstantSpeed = segment.distance - accelerationDistance;
+            var timeAtConstantSpeed = distanceAtConstantSpeed / (adjustedMaxSpeed / 3.6);
+            
+            totalTime += timeToMaxSpeed + timeAtConstantSpeed;
+        }
+    });
+    
+    var trafficLightCount = visibleTrafficLights.length;
+    var turn90Count = contarGiros90Grados(routeCoordinates);
+    
+    var trafficLightTime = trafficLightCount * trafficLightWait;
+    var cornerTime = turn90Count * cornerWaitTime;
+    
+    totalTime += trafficLightTime + cornerTime;
+    
+    document.getElementById('baseTime').textContent = Math.round(totalTime / 60);
+    document.getElementById('trafficLightTime').textContent = Math.round(trafficLightTime / 60);
+    document.getElementById('cornerTime').textContent = Math.round(cornerTime / 60);
+    document.getElementById('totalTravelTime').textContent = Math.round(totalTime / 60);
+    
+    return totalTime;
+}
+
+function contarGiros90Grados(coordinates) {
+    let count = 0;
+    for (let i = 1; i < coordinates.length - 1; i++) {
+        let angle = calculateAngle(coordinates[i-1], coordinates[i], coordinates[i+1]);
+        if (Math.abs(angle) > 80 && Math.abs(angle) < 100) {
+            count++;
+        }
+    }
+    return count;
+}
+
+function calculateAngle(point1, point2, point3) {
+    let angle1 = Math.atan2(point1.lat - point2.lat, point1.lng - point2.lng);
+    let angle2 = Math.atan2(point3.lat - point2.lat, point3.lng - point2.lng);
+    let angle = (angle2 - angle1) * 180 / Math.PI;
+    return angle < -180 ? angle + 360 : angle > 180 ? angle - 360 : angle;
+}
+
+function animateCar() {
+    var startPoint = routeCoordinates[0];
+    var endPoint = routeCoordinates[routeCoordinates.length - 1];
+    var startTime = Date.now();
+    var duration = 5000; // 5 segundos para la animación
+
+    function animate() {
+        var now = Date.now();
+        var elapsedTime = now - startTime;
+        var progress = Math.min(elapsedTime / duration, 1);
+
+        if (progress < 1 && isAnimating) {
+            var lat = startPoint.lat + (endPoint.lat - startPoint.lat) * progress;
+            var lng = startPoint.lng + (endPoint.lng - startPoint.lng) * progress;
+            carMarker.setLatLng([lat, lng]);
+            carStatus.textContent = "Auto en movimiento";
+            animationId = requestAnimationFrame(animate);
+        } else if (!isAnimating) {
+            carStatus.textContent = "Animación detenida";
+        } else {
+            carMarker.setLatLng(endPoint);
+            carStatus.textContent = "Auto llegó a su destino";
+            isAnimating = false;
+        }
+    }
+    animationId = requestAnimationFrame(animate);
+}
+
+function calculateSegmentDistances() {
+    var segments = [];
+    var totalDistance = 0;
+    var lastPoint = null;
+    var segmentCount = 0;
+    var lastTrafficLightIndex = -1;
+
+    for (let i = 0; i < routeCoordinates.length - 1; i++) {
+        var start = L.latLng(routeCoordinates[i].lat, routeCoordinates[i].lng);
+        var end = L.latLng(routeCoordinates[i + 1].lat, routeCoordinates[i + 1].lng);
+        var distance = start.distanceTo(end);
+        totalDistance += distance;
+
+        var nearbyTrafficLight = visibleTrafficLights.find(light => 
+            L.latLng(light[0], light[1]).distanceTo(end) < proximityThreshold
+        );
+
+        var is90DegreeAngle = false;
+        if (i > 0 && i < routeCoordinates.length - 2) {
+            let angle = calculateAngle(routeCoordinates[i-1], routeCoordinates[i], routeCoordinates[i+1]);
+            is90DegreeAngle = Math.abs(angle) > 80 && Math.abs(angle) < 100;
+        }
+
+        if (nearbyTrafficLight || is90DegreeAngle) {
+            if (nearbyTrafficLight) {
+                // Verificar si este semáforo está muy cerca del anterior
+                if (lastTrafficLightIndex !== -1) {
+                    var lastTrafficLight = L.latLng(visibleTrafficLights[lastTrafficLightIndex][0], visibleTrafficLights[lastTrafficLightIndex][1]);
+                    var currentTrafficLight = L.latLng(nearbyTrafficLight[0], nearbyTrafficLight[1]);
+                    var distanceBetweenLights = lastTrafficLight.distanceTo(currentTrafficLight);
+                    
+                    if (distanceBetweenLights < 10) {
+                        // Si está muy cerca, ignoramos este semáforo y continuamos
+                        continue;
+                    }
+                }
+                lastTrafficLightIndex = visibleTrafficLights.indexOf(nearbyTrafficLight);
+            }
+
+            segmentCount++;
+            var pointDescription = nearbyTrafficLight ? 
+                `Semáforo ${segmentCount}` : 
+                `Giro ${segmentCount}`;
+
+            segments.push({
+                start: lastPoint ? lastPoint.description : 'Inicio',
+                end: pointDescription,
+                distance: totalDistance,
+                coords: `${end.lat.toFixed(6)}, ${end.lng.toFixed(6)}`
+            });
+            totalDistance = 0;
+            lastPoint = {description: pointDescription, coords: `${end.lat.toFixed(6)}, ${end.lng.toFixed(6)}`};
+        }
+    }
+
+    // Añadir el último segmento hasta el final de la ruta
+    if (totalDistance > 0) {
+        segments.push({
+            start: lastPoint ? lastPoint.description : 'Inicio',
+            end: 'Fin',
+            distance: totalDistance,
+            coords: `${routeCoordinates[routeCoordinates.length - 1].lat.toFixed(6)}, ${routeCoordinates[routeCoordinates.length - 1].lng.toFixed(6)}`
+        });
+    }
+
+    return segments;
+}
+
+function displaySegmentDistances() {
+    var segments = calculateSegmentDistances();
+    var distancesList = document.getElementById('distances-list');
+    var segmentsList = document.getElementById('segments-list');
+    distancesList.innerHTML = '';
+    segmentsList.innerHTML = '';
+
+    var maxSpeed = parseFloat(document.getElementById('maxSpeed').value);
+    var environment = document.getElementById('environment').value;
+    var adjustedMaxSpeed = getAdjustedSpeed(maxSpeed, environment);
+    var vehicleType = document.getElementById('vehicleType').value;
+    var accelerationTime = vehicleAccelerationTime[vehicleType] || 10;
+    var acceleration = (100 / 3.6) / accelerationTime; // m/s^2
+    
+    var accelerationDistance = 0.5 * acceleration * Math.pow(adjustedMaxSpeed / 3.6, 2) / acceleration;
+
+    segments.forEach((segment, index) => {
+        // Distancias
+        var distanceLi = document.createElement('li');
+        distanceLi.textContent = `Tramo ${index + 1}: De ${segment.start} a ${segment.end} - ${segment.distance.toFixed(2)} metros`;
+        distanceLi.title = `Coordenadas del punto final: ${segment.coords}`;
+        distancesList.appendChild(distanceLi);
+
+        // Tiempos
+        var timeLi = document.createElement('li');
+        var timeInSegment;
+        
+        if (segment.distance <= accelerationDistance) {
+            timeInSegment = Math.sqrt((2 * segment.distance) / acceleration);
+            timeLi.textContent = `Tramo ${index + 1}: ${timeInSegment.toFixed(2)} segundos (acelerando)`;
+        } else {
+            var timeToMaxSpeed = adjustedMaxSpeed / (3.6 * acceleration);
+            var distanceAtConstantSpeed = segment.distance - accelerationDistance;
+            var timeAtConstantSpeed = distanceAtConstantSpeed / (adjustedMaxSpeed / 3.6);
+            timeInSegment = timeToMaxSpeed + timeAtConstantSpeed;
+            timeLi.textContent = `Tramo ${index + 1}: ${timeInSegment.toFixed(2)} segundos (${timeToMaxSpeed.toFixed(2)}s acelerando + ${timeAtConstantSpeed.toFixed(2)}s a velocidad constante)`;
+        }
+        
+        segmentsList.appendChild(timeLi);
+    });
+}
+
+function updateRouteInfo() {
+    var trafficLightCount = visibleTrafficLights.length;
+    var turn90Count = contarGiros90Grados(routeCoordinates);
+    
+    document.getElementById('trafficLightCount').textContent = trafficLightCount;
+    document.getElementById('turn90Count').textContent = turn90Count;
+
+    displaySegmentDistances();
+    calculateAdvancedTravelTime();
+}
+
+document.getElementById('maxSpeed').addEventListener('input', function() {
+    var maxSpeedInput = document.getElementById('maxSpeed');
+    if (parseFloat(maxSpeedInput.value) > 60) {
+        maxSpeedInput.value = 60;
+    }
+    calculateAdvancedTravelTime();
+});
+
+document.getElementById('trafficLightWait').addEventListener('change', calculateAdvancedTravelTime);
+document.getElementById('cornerWaitTime').addEventListener('change', calculateAdvancedTravelTime);
+document.getElementById('environment').addEventListener('change', calculateAdvancedTravelTime);
+document.getElementById('vehicleType').addEventListener('change', calculateAdvancedTravelTime);
+
+// Inicialización
+fetchAndShowTrafficLights();
+
+function updateRoute() {
+  var waypoints = [
+    L.latLng(control.getWaypoints()[0].latLng),
+    ...waypointsList.map(wp => L.latLng(wp.lat, wp.lng)),
+    L.latLng(control.getWaypoints()[control.getWaypoints().length - 1].latLng)
+  ];
+  
+  control.setWaypoints(waypoints);
+}
+
+function addWaypoint(latlng) {
+  waypointsList.push(latlng);
+  updateWaypointsList();
+  updateRoute();
+}
+
+function removeWaypoint(index) {
+  waypointsList.splice(index, 1);
+  updateWaypointsList();
+  updateRoute();
+}
+
+function updateWaypointsList() {
+  var list = document.getElementById('waypoints-list');
+  list.innerHTML = '';
+  waypointsList.forEach((wp, index) => {
+    var li = document.createElement('li');
+    li.textContent = `Punto ${index + 1}: ${wp.lat.toFixed(4)}, ${wp.lng.toFixed(4)}`;
+    var removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Eliminar';
+    removeBtn.onclick = () => removeWaypoint(index);
+    li.appendChild(removeBtn);
+    list.appendChild(li);
+  });
+}
+
+document.getElementById('add-waypoint').addEventListener('click', function() {
+  map.once('click', function(e) {
+    addWaypoint(e.latlng);
+  });
+});
+
+    </script>
+
+</body>
+</html>
